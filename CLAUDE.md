@@ -54,9 +54,32 @@ src/
 ### Trading Safety
 - Paper mode and live mode use the SAME logic — only the Executor swaps
 - The bot REFUSES to switch to live mode unless graduation criteria are met (200+ trades, 2+ weeks, WR >52%)
-- Quarter Kelly sizing (25% of full Kelly) — never full Kelly
+- Quarter Kelly sizing (25% of full Kelly) — never full Kelly. For copy signals use 0.15-0.20 (win rate as probability is an approximation)
 - Hard caps: max 5% of bankroll per position, 30% cash reserve, max 10 concurrent positions
 - Daily loss limit: if portfolio drops 5% in a day, PAUSE trading and alert via Telegram
+
+### Error Handling
+- Exponential backoff on all API calls (1s, 2s, 4s, 8s, max 60s)
+- Circuit breaker per endpoint: 5 consecutive failures → pause 2 min → alert via Telegram
+- Idempotent order placement: track order IDs in DB before submission
+- SQLite WAL mode (`PRAGMA journal_mode=WAL`) for concurrent access
+- Graceful shutdown on SIGTERM/SIGINT: cancel pending orders, save state
+- Startup reconciliation: check CLOB for pending orders, sync positions
+
+### Rate Limiting
+- Polymarket limits: 100 reads/min (Data/Gamma), 60 orders/min (CLOB)
+- Copy trading poller: round-robin one wallet per cycle, NOT all wallets every cycle
+- Max 15 tracked wallets (each checked every ~30s with round-robin)
+- Add 50ms delay between paginated calls
+- RateLimiter class tracks requests/min and delays when approaching limit
+
+### Market ID Disambiguation
+- `condition_id` = market-level identifier (from Gamma API `conditionId`)
+- `token_id` = specific outcome token (YES or NO) for CLOB operations
+- `market_id` in our models = `condition_id`
+- All CLOB operations (price, book, orders) require `token_id`
+- Data models must carry BOTH `market_id` and `token_id`
+- Check `negRisk` flag to route to correct exchange contract
 
 ### Code Style
 - Type hints on all function signatures
