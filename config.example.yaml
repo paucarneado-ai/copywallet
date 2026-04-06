@@ -1,0 +1,134 @@
+# Copywallet Configuration
+# Copy this to config.yaml and fill in your values
+# NEVER commit config.yaml — it contains secrets
+
+# =============================================================================
+# MODE
+# =============================================================================
+mode: paper                    # "paper" or "live" — start with paper ALWAYS
+
+# =============================================================================
+# API KEYS (required)
+# =============================================================================
+anthropic_api_key: ""          # Phase 2: sk-ant-... from console.anthropic.com
+telegram_bot_token: ""         # From @BotFather on Telegram
+telegram_user_id: ""           # Your Telegram user ID (for auth)
+
+# =============================================================================
+# POLYMARKET (required for live mode)
+# =============================================================================
+polymarket:
+  private_key: ""              # Your dedicated wallet private key
+  proxy_wallet: ""             # Your Polymarket proxy wallet address
+  clob_host: "https://clob.polymarket.com"
+  data_api_host: "https://data-api.polymarket.com"
+  gamma_api_host: "https://gamma-api.polymarket.com"
+  chain_id: 137                # Polygon mainnet
+
+# =============================================================================
+# COPY TRADING (Phase 1)
+# =============================================================================
+copy_trading:
+  enabled: true
+  poll_interval_seconds: 2     # How often to check leader activity
+  discovery_interval_hours: 6  # How often to rescore wallets
+
+  # Wallet scoring thresholds
+  min_win_rate: 0.55           # Minimum category win rate to follow
+  max_win_rate: 0.90           # Above this is suspicious (stat padding)
+  min_resolved_positions: 50   # Minimum total resolved positions
+  min_category_positions: 20   # Minimum positions in a specific category
+  min_volume: 100000           # Minimum lifetime volume (USD)
+  min_profit_factor: 1.5       # Gross profit / gross loss
+
+  # Categories to scan for leaders
+  categories:
+    - CRYPTO
+    # - SPORTS
+    # - POLITICS
+    # - ECONOMICS
+    # - WEATHER
+
+  # Trade filters
+  max_trade_age_seconds: 60    # Skip trades older than this
+  max_price_drift: 0.05        # Skip if price moved >5% since leader's entry
+  max_spread: 0.10             # Skip if bid-ask spread >$0.10
+  max_slippage: 0.02           # Skip if estimated slippage >2%
+
+  # Limits
+  max_position_per_market: 100 # Max USD per copied market
+  max_concurrent_positions: 10 # Max open copy positions at once
+
+# =============================================================================
+# CLAUDE BRAIN (Phase 2 — disabled by default)
+# =============================================================================
+claude_brain:
+  enabled: false
+  model: "claude-sonnet-4-20250514"
+  scan_interval_seconds: 120   # How often to scan markets
+  cooldown_minutes: 15         # Don't re-evaluate same market within this window
+  position_cooldown_minutes: 30 # Re-evaluate existing positions less often
+  price_change_override: 0.05  # Re-evaluate if price moves >5% despite cooldown
+
+  # EV thresholds
+  min_ev_threshold: 0.05       # Skip if expected value <5%
+
+  # Categories to analyze
+  categories:
+    - crypto
+    # - politics
+    # - economics
+
+# =============================================================================
+# RISK MANAGEMENT (shared across strategies)
+# =============================================================================
+risk:
+  starting_bankroll: 10000     # Paper trading starting amount (USD)
+  kelly_fraction: 0.25         # Quarter Kelly (0.25 = 25% of full Kelly)
+  max_position_pct: 0.05       # Max 5% of bankroll per position
+  cash_reserve_pct: 0.30       # Keep 30% as cash
+  max_concurrent_positions: 10 # Total across all strategies
+  daily_loss_limit_pct: 0.05   # Pause if portfolio drops 5% in a day
+  min_trade_size: 10           # Minimum trade size in USD
+
+# =============================================================================
+# MARKET SCANNER
+# =============================================================================
+scanner:
+  min_volume_24h: 5000         # Skip low-volume markets
+  min_time_to_resolution_hours: 1  # Skip markets about to close
+  max_spread: 0.10             # Skip illiquid markets
+  categories:
+    - crypto
+
+# =============================================================================
+# PAPER TRADING GRADUATION
+# =============================================================================
+graduation:
+  min_trades: 200              # Minimum paper trades before going live
+  min_days: 14                 # Minimum paper trading days
+  min_win_rate: 0.52           # Must beat break-even after fees
+  min_profit_factor: 1.2       # Total wins / total losses
+  max_drawdown: 0.15           # Max drawdown during paper period
+  auto_scale_hours: 48         # Use 10% bankroll for first 48h of live
+
+# =============================================================================
+# DASHBOARD
+# =============================================================================
+dashboard:
+  host: "127.0.0.1"
+  port: 8080
+  password: ""                 # Leave empty for local-only access
+
+# =============================================================================
+# DATABASE
+# =============================================================================
+database:
+  path: "copywallet.db"        # SQLite database file
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+logging:
+  level: "INFO"                # DEBUG, INFO, WARNING, ERROR
+  file: "copywallet.log"
