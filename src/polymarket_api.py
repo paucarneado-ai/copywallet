@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Base URLs
 # ---------------------------------------------------------------------------
 
-DATA_API: str = "https://data-api.polymarket.com"
+DATA_API: str = "https://data-api.polymarket.com/v1"
 GAMMA_API: str = "https://gamma-api.polymarket.com"
 CLOB_API: str = "https://clob.polymarket.com"
 
