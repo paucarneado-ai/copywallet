@@ -168,8 +168,12 @@ class CopyTradeMonitor:
         )
 
         # --- Current price and spread from CLOB ---
+        # If orderbook doesn't exist, the market is resolved/expired — skip
         spread = await self._safe_get_spread(token_id)
         midpoint = await self._safe_get_midpoint(token_id)
+        if midpoint == 0.0 and spread >= 1.0:
+            logger.debug("Skipping resolved/expired market %s", market_id)
+            return None
 
         # --- Price drift ---
         price_drift = abs(midpoint - leader_price) / max(leader_price, 0.01)
