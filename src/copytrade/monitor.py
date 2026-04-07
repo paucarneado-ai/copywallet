@@ -99,7 +99,7 @@ class CopyTradeMonitor:
 
         signals: list[CopySignal] = []
         for trade in activity:
-            trade_id = trade.get("id", "")
+            trade_id = trade.get("transactionHash", trade.get("id", ""))
             try:
                 if await self._db.is_known_trade(trade_id):
                     continue
@@ -132,7 +132,7 @@ class CopyTradeMonitor:
         except Exception:
             logger.exception(
                 "Error evaluating trade %s from %s",
-                trade.get("id", "unknown"),
+                trade.get("transactionHash", trade.get("id", "unknown")),
                 leader_address,
             )
             return None
@@ -141,11 +141,16 @@ class CopyTradeMonitor:
         self, trade: dict[str, Any], leader_address: str
     ) -> CopySignal | None:
         """Core evaluation logic, separated for clean error handling."""
-        market_id = trade["market"]
-        match_time = trade.get("match_time", "")
+        market_id = trade.get("conditionId", trade.get("market", ""))
+        raw_ts = trade.get("timestamp", "")
+        # Activity API returns unix int; older format uses ISO string
+        if isinstance(raw_ts, (int, float)):
+            match_time = datetime.fromtimestamp(raw_ts, tz=timezone.utc).isoformat()
+        else:
+            match_time = str(raw_ts)
         trade_side = trade["side"]
         leader_price = float(trade["price"])
-        token_id = trade["asset_id"]
+        token_id = trade.get("asset", trade.get("asset_id", ""))
 
         # Map trade side to signal side; detect position reductions
         leader_is_reducing = trade_side == "SELL"
@@ -260,12 +265,12 @@ class CopyTradeMonitor:
 
         cache_entry = {
             "market_id": market_id,
-            "condition_id": market_data.get("condition_id", market_id),
-            "token_id_yes": market_data.get("token_id_yes", ""),
-            "token_id_no": market_data.get("token_id_no", ""),
+            "condition_id": market_data.get("conditionId", market_data.get("condition_id", market_id)),
+            "token_id_yes": "",
+            "token_id_no": "",
             "question": market_data.get("question", ""),
-            "category": category,
-            "neg_risk": market_data.get("neg_risk", False),
+            "category": category.lower(),
+            "neg_risk": market_data.get("negRisk", market_data.get("neg_risk", False)),
             "cached_at": datetime.now(timezone.utc).isoformat(),
         }
         await self._db.cache_market(cache_entry)
