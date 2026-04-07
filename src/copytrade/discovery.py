@@ -148,18 +148,20 @@ class WalletDiscovery:
 
             leaders = await self._api.get_leaderboard(
                 category=category,
-                period="ALL",
-                order_by="profit",
+                period="MONTH",
+                order_by="PNL",
                 limit=_LEADERBOARD_LIMIT,
             )
 
             for leader in leaders:
-                volume = leader.get("volume", 0)
+                volume = float(leader.get("vol", leader.get("volume", 0)))
                 if volume < self._config.min_volume:
                     continue
 
-                address = leader["address"]
-                username = leader.get("username", address[:8])
+                address = leader.get("proxyWallet", leader.get("address", ""))
+                if not address:
+                    continue
+                username = leader.get("userName", leader.get("username", address[:8]))
 
                 raw_trades = await self._api.get_all_trades(address)
                 enriched = await self._enrich_trades_with_category(raw_trades)
