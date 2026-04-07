@@ -24,10 +24,11 @@ logger = logging.getLogger(__name__)
 
 
 def score_wallet_trades(trades: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    """Score a wallet's resolved trades grouped by market category.
+    """Score a wallet's resolved positions grouped by market category.
 
-    Each trade dict must contain keys: ``outcome``, ``side``, ``price``,
-    ``size``, ``status`` (``"WON"`` or ``"LOST"``), and ``category``.
+    Accepts two formats:
+    - Closed positions (from Data API): has ``realizedPnl``, ``totalBought``, ``category``
+    - Legacy test format: has ``status`` ("WON"/"LOST"), ``size``, ``price``, ``category``
 
     Returns:
         Mapping of category name to a stats dict with:
@@ -39,44 +40,66 @@ def score_wallet_trades(trades: list[dict[str, Any]]) -> dict[str, dict[str, Any
 
     buckets: dict[str, list[dict[str, Any]]] = {}
     for trade in trades:
-        category = trade["category"]
+        category = trade.get("category", "unknown")
         buckets.setdefault(category, []).append(trade)
 
     results: dict[str, dict[str, Any]] = {}
     for category, cat_trades in buckets.items():
+        if category == "unknown":
+            continue
         results[category] = _score_category(cat_trades)
 
     return results
 
 
 def _score_category(trades: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute aggregate statistics for a single category's trades.
+    """Compute aggregate statistics for a single category's positions.
 
-    Win/loss classification uses the ``status`` field.  Profit and loss
-    amounts derive from ``size`` (USD notional) and ``price`` (entry
-    probability).
+    Supports both closed-positions format (realizedPnl) and legacy test
+    format (status WON/LOST).
     """
-    wins = [t for t in trades if t["status"] == "WON"]
-    losses = [t for t in trades if t["status"] == "LOST"]
+    wins = 0
+    losses = 0
+    gross_profit = 0.0
+    gross_loss = 0.0
+    total_size = 0.0
 
-    total = len(wins) + len(losses)
-    win_rate = len(wins) / total if total > 0 else 0.0
+    for t in trades:
+        # Closed-positions format from Polymarket API
+        if "realizedPnl" in t:
+            pnl = float(t["realizedPnl"])
+            size = float(t.get("totalBought", 0))
+            total_size += size
+            if pnl > 0:
+                wins += 1
+                gross_profit += pnl
+            else:
+                losses += 1
+                gross_loss += abs(pnl)
+        # Legacy test format
+        elif "status" in t:
+            size = float(t.get("size", 0))
+            price = float(t.get("price", 0))
+            total_size += size
+            if t["status"] == "WON":
+                wins += 1
+                gross_profit += size * (1 - price)
+            elif t["status"] == "LOST":
+                losses += 1
+                gross_loss += size * price
 
-    gross_profit = sum(t["size"] * (1 - t["price"]) for t in wins)
-    gross_loss = sum(t["size"] * t["price"] for t in losses)
-
-    roi = (gross_profit - gross_loss) / max(gross_loss, 1)
-    profit_factor = gross_profit / max(gross_loss, 0.01)
-    avg_position_size = sum(t["size"] for t in trades) / len(trades)
-    total_pnl = gross_profit - gross_loss
+    total = wins + losses
+    if total == 0:
+        return {"win_rate": 0, "resolved_positions": 0, "roi": 0,
+                "profit_factor": 0, "avg_position_size": 0, "total_pnl": 0}
 
     return {
-        "win_rate": win_rate,
+        "win_rate": wins / total,
         "resolved_positions": total,
-        "roi": roi,
-        "profit_factor": profit_factor,
-        "avg_position_size": avg_position_size,
-        "total_pnl": total_pnl,
+        "roi": (gross_profit - gross_loss) / max(gross_loss, 1),
+        "profit_factor": gross_profit / max(gross_loss, 0.01),
+        "avg_position_size": total_size / len(trades),
+        "total_pnl": gross_profit - gross_loss,
     }
 
 
@@ -164,8 +187,8 @@ class WalletDiscovery:
                 username = leader.get("userName", leader.get("username", address[:8]))
 
                 try:
-                    raw_trades = await self._get_trades_capped(address, max_pages=10)
-                    enriched = await self._enrich_trades_with_category(raw_trades)
+                    closed = await self._get_closed_positions_capped(address, max_pages=10)
+                    enriched = self._categorize_closed_positions(closed, category)
                     cat_stats = score_wallet_trades(enriched)
                     suspicious = is_suspicious(cat_stats, self._config.max_win_rate)
 
@@ -196,20 +219,40 @@ class WalletDiscovery:
 
         logger.info("Discovery complete: %d wallets tracked", tracked_count)
 
-    async def _get_trades_capped(self, address: str, max_pages: int = 10) -> list[dict[str, Any]]:
-        """Fetch trades with a cap on pagination to avoid API errors on heavy traders."""
-        all_trades: list[dict[str, Any]] = []
+    async def _get_closed_positions_capped(self, address: str, max_pages: int = 10) -> list[dict[str, Any]]:
+        """Fetch closed positions with a cap on pagination."""
+        all_positions: list[dict[str, Any]] = []
         for page in range(max_pages):
             try:
-                batch = await self._api.get_trades(address, limit=100, offset=page * 100)
+                batch = await self._api.get_closed_positions(address, limit=100, offset=page * 100)
             except Exception:
                 break
             if not batch:
                 break
-            all_trades.extend(batch)
+            all_positions.extend(batch)
             if len(batch) < 100:
                 break
-        return all_trades
+        return all_positions
+
+    def _categorize_closed_positions(
+        self, positions: list[dict[str, Any]], default_category: str
+    ) -> list[dict[str, Any]]:
+        """Add a ``category`` field to closed positions based on title keywords."""
+        crypto_keywords = ("bitcoin", "btc", "ethereum", "eth", "crypto", "solana", "sol")
+        sports_keywords = ("nfl", "nba", "soccer", "football", "match", "game", "championship")
+        politics_keywords = ("election", "president", "congress", "vote", "political", "trump", "biden")
+
+        for pos in positions:
+            title = pos.get("title", "").lower()
+            if any(kw in title for kw in crypto_keywords):
+                pos["category"] = "crypto"
+            elif any(kw in title for kw in sports_keywords):
+                pos["category"] = "sports"
+            elif any(kw in title for kw in politics_keywords):
+                pos["category"] = "politics"
+            else:
+                pos["category"] = default_category.lower()
+        return positions
 
     async def _enrich_trades_with_category(
         self,
