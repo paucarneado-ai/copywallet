@@ -272,3 +272,71 @@ class TestDefaults:
         assert cfg.polymarket.data_api_host == "https://data-api.polymarket.com"
         assert cfg.polymarket.gamma_api_host == "https://gamma-api.polymarket.com"
         assert cfg.polymarket.chain_id == 137
+
+    def test_claude_brain_defaults(self, tmp_path: Path) -> None:
+        """Claude brain section defaults to disabled with sensible parameters."""
+        cfg_path = tmp_path / "minimal.yaml"
+        cfg_path.write_text("mode: paper\n")
+        cfg = load_config(str(cfg_path))
+
+        assert cfg.claude_brain.enabled is False
+        assert cfg.claude_brain.model == "claude-sonnet-4-20250514"
+        assert cfg.claude_brain.scan_interval_seconds == 120
+        assert cfg.claude_brain.cooldown_minutes == 15
+
+
+class TestClaudeBrainConfig:
+    """Verify that claude_brain section loads and overrides correctly."""
+
+    def test_loads_claude_brain_overrides(self, tmp_path: Path) -> None:
+        """YAML overrides for claude_brain are applied correctly."""
+        cfg_path = tmp_path / "brain.yaml"
+        cfg_path.write_text(
+            textwrap.dedent("""\
+                mode: paper
+                claude_brain:
+                  enabled: true
+                  model: "claude-opus-4-20250514"
+                  scan_interval_seconds: 60
+                  cooldown_minutes: 30
+            """)
+        )
+        cfg = load_config(str(cfg_path))
+
+        assert cfg.claude_brain.enabled is True
+        assert cfg.claude_brain.model == "claude-opus-4-20250514"
+        assert cfg.claude_brain.scan_interval_seconds == 60
+        assert cfg.claude_brain.cooldown_minutes == 30
+
+    def test_partial_claude_brain_overrides(self, tmp_path: Path) -> None:
+        """Only specified fields are overridden; others keep defaults."""
+        cfg_path = tmp_path / "partial.yaml"
+        cfg_path.write_text(
+            textwrap.dedent("""\
+                mode: paper
+                claude_brain:
+                  enabled: true
+            """)
+        )
+        cfg = load_config(str(cfg_path))
+
+        assert cfg.claude_brain.enabled is True
+        assert cfg.claude_brain.model == "claude-sonnet-4-20250514"
+        assert cfg.claude_brain.scan_interval_seconds == 120
+        assert cfg.claude_brain.cooldown_minutes == 15
+
+    def test_unknown_claude_brain_keys_ignored(self, tmp_path: Path) -> None:
+        """Extra keys in claude_brain YAML section are silently ignored."""
+        cfg_path = tmp_path / "extra.yaml"
+        cfg_path.write_text(
+            textwrap.dedent("""\
+                mode: paper
+                claude_brain:
+                  enabled: true
+                  unknown_key: "should be ignored"
+            """)
+        )
+        cfg = load_config(str(cfg_path))
+
+        assert cfg.claude_brain.enabled is True
+        assert not hasattr(cfg.claude_brain, "unknown_key")

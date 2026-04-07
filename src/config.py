@@ -125,6 +125,21 @@ class GraduationConfig:
     auto_scale_hours: int = 48
 
 
+@dataclass
+class ClaudeBrainConfig:
+    """Claude-powered autonomous trading brain parameters.
+
+    Controls whether the brain pipeline is active, which model to use
+    for probability estimation, how often to scan for markets, and the
+    minimum cooldown between evaluations of the same market.
+    """
+
+    enabled: bool = False
+    model: str = "claude-sonnet-4-20250514"
+    scan_interval_seconds: int = 120
+    cooldown_minutes: int = 15
+
+
 # ---------------------------------------------------------------------------
 # Top-level Config
 # ---------------------------------------------------------------------------
@@ -142,6 +157,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     graduation: GraduationConfig = field(default_factory=GraduationConfig)
+    claude_brain: ClaudeBrainConfig = field(default_factory=ClaudeBrainConfig)
     fees: Dict[str, float] = field(default_factory=lambda: dict(DEFAULT_FEES))
     telegram_bot_token: str = ""
     telegram_user_id: str = ""
@@ -173,6 +189,7 @@ _NESTED_SECTIONS: Dict[str, Type[Any]] = {
     "database": DatabaseConfig,
     "logging": LoggingConfig,
     "graduation": GraduationConfig,
+    "claude_brain": ClaudeBrainConfig,
 }
 
 
