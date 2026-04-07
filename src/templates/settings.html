@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Settings - Copywallet{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Settings</h1>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+  <!-- Trading mode -->
+  <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+    <h2 class="text-lg font-semibold mb-3">Trading Mode</h2>
+    <div class="flex items-center space-x-2">
+      <span class="inline-block w-3 h-3 rounded-full
+        {{ 'bg-yellow-400' if mode == 'paper' else 'bg-emerald-500' }}"></span>
+      <span class="text-sm font-medium">{{ mode | upper }}</span>
+    </div>
+    <p class="text-xs text-gray-500 mt-1">
+      {% if mode == 'paper' %}
+        Simulated trading -- no real funds at risk.
+      {% else %}
+        Live trading with real USDC on Polygon.
+      {% endif %}
+    </p>
+  </div>
+
+  <!-- Risk parameters -->
+  <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+    <h2 class="text-lg font-semibold mb-3">Risk Parameters</h2>
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Kelly Fraction</dt>
+        <dd>0.25</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Position %</dt>
+        <dd>5%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Cash Reserve %</dt>
+        <dd>30%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Concurrent Positions</dt>
+        <dd>10</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Daily Loss Limit %</dt>
+        <dd>5%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Trade Size</dt>
+        <dd>$10</dd>
+      </div>
+    </dl>
+  </div>
+
+  <!-- Copy trading parameters -->
+  <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+    <h2 class="text-lg font-semibold mb-3">Copy Trading</h2>
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Poll Interval</dt>
+        <dd>2 s</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Win Rate</dt>
+        <dd>55%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Trade Age</dt>
+        <dd>60 s</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Price Drift</dt>
+        <dd>5%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Spread</dt>
+        <dd>$0.10</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Tracked Wallets</dt>
+        <dd>15</dd>
+      </div>
+    </dl>
+  </div>
+
+  <!-- Graduation criteria -->
+  <div class="bg-gray-800 rounded-lg border border-gray-700 p-4">
+    <h2 class="text-lg font-semibold mb-3">Graduation Criteria</h2>
+    <dl class="space-y-2 text-sm">
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Trades</dt>
+        <dd>200</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Days</dt>
+        <dd>14</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Win Rate</dt>
+        <dd>52%</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Min Profit Factor</dt>
+        <dd>1.2</dd>
+      </div>
+      <div class="flex justify-between">
+        <dt class="text-gray-400">Max Drawdown</dt>
+        <dd>15%</dd>
+      </div>
+    </dl>
+  </div>
+
+</div>
+{% endblock %}

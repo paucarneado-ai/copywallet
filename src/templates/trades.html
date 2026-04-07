@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Trades - Copywallet{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Trade History</h1>
+
+{% if trades %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-750 text-gray-400 text-left">
+        <tr>
+          <th class="px-4 py-2">Time</th>
+          <th class="px-4 py-2">Market</th>
+          <th class="px-4 py-2">Side</th>
+          <th class="px-4 py-2">Price</th>
+          <th class="px-4 py-2">Size</th>
+          <th class="px-4 py-2">Fee</th>
+          <th class="px-4 py-2">Source</th>
+          <th class="px-4 py-2">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700">
+        {% for t in trades %}
+        <tr class="hover:bg-gray-700/50">
+          <td class="px-4 py-2 text-gray-400 whitespace-nowrap">{{ t.timestamp[:19] }}</td>
+          <td class="px-4 py-2 max-w-xs truncate">{{ t.question or t.market_id }}</td>
+          <td class="px-4 py-2">
+            <span class="px-2 py-0.5 rounded text-xs font-medium
+              {{ 'bg-emerald-900 text-emerald-300' if t.side == 'YES' else 'bg-red-900 text-red-300' }}">
+              {{ t.side }}
+            </span>
+          </td>
+          <td class="px-4 py-2">${{ "%.4f"|format(t.price) }}</td>
+          <td class="px-4 py-2">${{ "%.2f"|format(t.size_usd) }}</td>
+          <td class="px-4 py-2 text-gray-400">${{ "%.4f"|format(t.fee) }}</td>
+          <td class="px-4 py-2 text-gray-400">{{ t.signal_source }}</td>
+          <td class="px-4 py-2">
+            <span class="px-2 py-0.5 rounded text-xs
+              {{ 'bg-emerald-900 text-emerald-300' if t.status == 'filled' else 'bg-yellow-900 text-yellow-300' }}">
+              {{ t.status }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
+  <p class="text-gray-500">No trades yet.</p>
+</div>
+{% endif %}
+{% endblock %}

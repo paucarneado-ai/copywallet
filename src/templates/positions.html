@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Positions - Copywallet{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Open Positions</h1>
+
+{% if positions %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-750 text-gray-400 text-left">
+        <tr>
+          <th class="px-4 py-2">Market</th>
+          <th class="px-4 py-2">Side</th>
+          <th class="px-4 py-2">Entry Price</th>
+          <th class="px-4 py-2">Current Price</th>
+          <th class="px-4 py-2">Size (USD)</th>
+          <th class="px-4 py-2">Unrealized PnL</th>
+          <th class="px-4 py-2">Source</th>
+          <th class="px-4 py-2">Leader</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700">
+        {% for p in positions %}
+        <tr class="hover:bg-gray-700/50">
+          <td class="px-4 py-2 max-w-xs truncate">{{ p.market_id }}</td>
+          <td class="px-4 py-2">
+            <span class="px-2 py-0.5 rounded text-xs font-medium
+              {{ 'bg-emerald-900 text-emerald-300' if p.side == 'YES' else 'bg-red-900 text-red-300' }}">
+              {{ p.side }}
+            </span>
+          </td>
+          <td class="px-4 py-2">${{ "%.4f"|format(p.entry_price) }}</td>
+          <td class="px-4 py-2">${{ "%.4f"|format(p.current_price) }}</td>
+          <td class="px-4 py-2">${{ "%.2f"|format(p.size_usd) }}</td>
+          <td class="px-4 py-2 font-medium
+            {{ 'text-emerald-400' if p.unrealized_pnl >= 0 else 'text-red-400' }}">
+            ${{ "%.2f"|format(p.unrealized_pnl) }}
+          </td>
+          <td class="px-4 py-2 text-gray-400">{{ p.signal_source }}</td>
+          <td class="px-4 py-2 text-gray-400 font-mono text-xs">
+            {% if p.leader_address %}
+              {{ p.leader_address[:6] }}...{{ p.leader_address[-4:] }}
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
+  <p class="text-gray-500">No open positions.</p>
+</div>
+{% endif %}
+{% endblock %}

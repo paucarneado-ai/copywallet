@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Overview - Copywallet{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Dashboard Overview</h1>
+
+<!-- Stats cards -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <p class="text-sm text-gray-400">Balance</p>
+    <p class="text-2xl font-semibold text-emerald-400">${{ "%.2f"|format(balance) }}</p>
+  </div>
+
+  <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <p class="text-sm text-gray-400">Open Positions</p>
+    <p class="text-2xl font-semibold">{{ positions_count }}</p>
+  </div>
+
+  <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <p class="text-sm text-gray-400">Today's PnL</p>
+    {% set daily = portfolio.get("daily_pnl", 0) if portfolio else 0 %}
+    <p class="text-2xl font-semibold {{ 'text-emerald-400' if daily >= 0 else 'text-red-400' }}">
+      ${{ "%.2f"|format(daily) }}
+    </p>
+  </div>
+
+  <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+    <p class="text-sm text-gray-400">Total PnL</p>
+    {% set total = portfolio.get("total_pnl", 0) if portfolio else 0 %}
+    <p class="text-2xl font-semibold {{ 'text-emerald-400' if total >= 0 else 'text-red-400' }}">
+      ${{ "%.2f"|format(total) }}
+    </p>
+  </div>
+</div>
+
+<!-- Bot status -->
+<div class="mb-8 flex items-center space-x-2">
+  <span class="inline-block w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+  <span class="text-sm text-gray-300">Bot running (paper mode)</span>
+</div>
+
+<!-- Recent trades -->
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+  <div class="px-4 py-3 border-b border-gray-700">
+    <h2 class="text-lg font-semibold">Recent Trades</h2>
+  </div>
+
+  {% if recent_trades %}
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-750 text-gray-400 text-left">
+        <tr>
+          <th class="px-4 py-2">Time</th>
+          <th class="px-4 py-2">Market</th>
+          <th class="px-4 py-2">Side</th>
+          <th class="px-4 py-2">Price</th>
+          <th class="px-4 py-2">Size</th>
+          <th class="px-4 py-2">Status</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700">
+        {% for t in recent_trades %}
+        <tr class="hover:bg-gray-700/50">
+          <td class="px-4 py-2 text-gray-400">{{ t.timestamp[:19] }}</td>
+          <td class="px-4 py-2 max-w-xs truncate">{{ t.question or t.market_id }}</td>
+          <td class="px-4 py-2">
+            <span class="px-2 py-0.5 rounded text-xs font-medium
+              {{ 'bg-emerald-900 text-emerald-300' if t.side == 'YES' else 'bg-red-900 text-red-300' }}">
+              {{ t.side }}
+            </span>
+          </td>
+          <td class="px-4 py-2">${{ "%.4f"|format(t.price) }}</td>
+          <td class="px-4 py-2">${{ "%.2f"|format(t.size_usd) }}</td>
+          <td class="px-4 py-2">
+            <span class="px-2 py-0.5 rounded text-xs
+              {{ 'bg-emerald-900 text-emerald-300' if t.status == 'filled' else 'bg-yellow-900 text-yellow-300' }}">
+              {{ t.status }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="px-4 py-6 text-gray-500 text-center">No trades yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

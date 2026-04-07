@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Leaders - Copywallet{% endblock %}
+
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Tracked Leaders</h1>
+
+{% if wallets %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-750 text-gray-400 text-left">
+        <tr>
+          <th class="px-4 py-2">Username</th>
+          <th class="px-4 py-2">Address</th>
+          <th class="px-4 py-2">Top Categories</th>
+          <th class="px-4 py-2">PnL</th>
+          <th class="px-4 py-2">Volume</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-700">
+        {% for w in wallets %}
+        <tr class="hover:bg-gray-700/50">
+          <td class="px-4 py-2 font-medium">{{ w.username or "Unknown" }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-400">
+            {{ w.address[:6] }}...{{ w.address[-4:] }}
+          </td>
+          <td class="px-4 py-2">
+            {% if w.category_stats and w.category_stats is mapping %}
+              {% for cat, stats in w.category_stats.items() %}
+              <span class="inline-block mr-1 mb-1 px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-300">
+                {{ cat }}
+                {% if stats is mapping and stats.get("win_rate") is not none %}
+                  {{ "%.0f"|format(stats.win_rate * 100) }}%
+                {% endif %}
+              </span>
+              {% endfor %}
+            {% else %}
+              <span class="text-gray-500">-</span>
+            {% endif %}
+          </td>
+          <td class="px-4 py-2 font-medium
+            {{ 'text-emerald-400' if w.total_pnl >= 0 else 'text-red-400' }}">
+            ${{ "%.2f"|format(w.total_pnl) }}
+          </td>
+          <td class="px-4 py-2">${{ "%.0f"|format(w.total_volume) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="bg-gray-800 rounded-lg border border-gray-700 p-8 text-center">
+  <p class="text-gray-500">No tracked leaders yet.</p>
+</div>
+{% endif %}
+{% endblock %}
