@@ -220,8 +220,11 @@ class PolymarketAPI:
         Args:
             condition_id: the market's condition identifier.
         """
-        result = await self._get(f"{GAMMA_API}/markets/{condition_id}")
-        return result  # type: ignore[return-value]
+        # Gamma API requires conditionId as query param, not path param
+        results = await self._get(f"{GAMMA_API}/markets", {"conditionId": condition_id})
+        if isinstance(results, list) and results:
+            return results[0]
+        return results  # type: ignore[return-value]
 
     async def get_events(
         self,
