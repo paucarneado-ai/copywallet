@@ -177,24 +177,24 @@ async def main() -> None:
                 try:
                     markets = await scanner.scan()
                     for market in markets:
-                        signal = await brain.evaluate(market)
-                        if signal and signal.action not in ("HOLD", "SELL"):
+                        brain_signal = await brain.evaluate(market)
+                        if brain_signal and brain_signal.action not in ("HOLD", "SELL"):
                             copy_signal = CopySignal(
-                                market_id=signal.market_id,
-                                token_id=signal.token_id,
-                                question=signal.question,
-                                category=signal.category,
-                                side=signal.action,
+                                market_id=brain_signal.market_id,
+                                token_id=brain_signal.token_id,
+                                question=brain_signal.question,
+                                category=brain_signal.category,
+                                side=brain_signal.action,
                                 leader_address="",
                                 leader_username="claude_brain",
-                                leader_price=signal.p_market,
-                                current_price=signal.p_market,
+                                leader_price=brain_signal.p_market,
+                                current_price=brain_signal.p_market,
                                 estimated_slippage=0.0,
-                                position_size_usd=signal.position_size_usd,
-                                leader_category_wr=signal.p_true,
-                                kelly_fraction=signal.kelly_fraction,
-                                neg_risk=signal.neg_risk,
-                                reasoning=signal.reasoning,
+                                position_size_usd=brain_signal.position_size_usd,
+                                leader_category_wr=brain_signal.p_true,
+                                kelly_fraction=brain_signal.kelly_fraction,
+                                neg_risk=brain_signal.neg_risk,
+                                reasoning=brain_signal.reasoning,
                             )
                             result = await executor.execute(copy_signal)
                             if result.status == "filled":
@@ -203,9 +203,9 @@ async def main() -> None:
                                 )
                                 logger.info(
                                     "Brain trade: %s %s | EV: %.3f | $%.2f",
-                                    signal.action,
-                                    signal.question[:50],
-                                    signal.ev,
+                                    brain_signal.action,
+                                    brain_signal.question[:50],
+                                    brain_signal.ev,
                                     result.size_usd,
                                 )
                     last_brain_scan = now
