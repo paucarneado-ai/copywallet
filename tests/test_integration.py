@@ -111,6 +111,8 @@ def _mock_api() -> AsyncMock:
 
     # Leader's full trade history: 7 won, 3 lost -> 70 % WR
     api.get_all_trades.return_value = _build_leader_trades(won=7, lost=3)
+    # Discovery uses get_closed_positions (paginated), return same data
+    api.get_closed_positions.return_value = _build_leader_trades(won=7, lost=3)
 
     # Market metadata (Gamma API) -- each condition_id resolves here.
     # The first tag label becomes the trade category.
@@ -121,7 +123,8 @@ def _mock_api() -> AsyncMock:
         "negRisk": False,
     }
 
-    # Activity: one brand-new trade from the leader
+    # Activity: one brand-new trade from the leader.
+    # The monitor reads "timestamp" (unix int or ISO string), not "match_time".
     api.get_activity.return_value = [
         {
             "id": "trade_new_1",
@@ -129,7 +132,7 @@ def _mock_api() -> AsyncMock:
             "asset_id": "tok_new",
             "side": "BUY",
             "price": 0.48,
-            "match_time": "2099-01-01T00:00:00Z",
+            "timestamp": 4102444800,  # 2099-01-01 — always in the future
             "size": 100,
         },
     ]
@@ -198,9 +201,9 @@ class TestFullPipelineEndToEnd:
 
         # Verify category stats are parsed correctly
         stats = wallets[0]["category_stats"]
-        assert "Crypto" in stats, f"Expected 'Crypto' in stats keys: {list(stats.keys())}"
-        assert stats["Crypto"]["win_rate"] == pytest.approx(0.70, rel=0.01)
-        assert stats["Crypto"]["resolved_positions"] == 10
+        assert "crypto" in stats, f"Expected 'crypto' in stats keys: {list(stats.keys())}"
+        assert stats["crypto"]["win_rate"] == pytest.approx(0.70, rel=0.01)
+        assert stats["crypto"]["resolved_positions"] == 10
 
         # -- Step 2: Monitor loads the wallet list --
         monitor = CopyTradeMonitor(api, db, config)
@@ -247,7 +250,9 @@ class TestPipelineRejectsSuspiciousWallet:
         api = _mock_api()
 
         # Override: 19 wins, 1 loss -> 95 % WR (suspicious)
-        api.get_all_trades.return_value = _build_leader_trades(won=19, lost=1)
+        suspicious_trades = _build_leader_trades(won=19, lost=1)
+        api.get_all_trades.return_value = suspicious_trades
+        api.get_closed_positions.return_value = suspicious_trades
 
         discovery = WalletDiscovery(api, db, config.copy_trading)
         await discovery.discover()

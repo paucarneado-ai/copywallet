@@ -219,11 +219,27 @@ class PolymarketAPI:
 
         Args:
             condition_id: the market's condition identifier.
+
+        Raises:
+            ValueError: when the API returns no matching market, which
+                happens when the conditionId is invalid or the Gamma API
+                returns unfiltered results (a known quirk).
         """
         # Gamma API requires conditionId as query param, not path param
         results = await self._get(f"{GAMMA_API}/markets", {"conditionId": condition_id})
-        if isinstance(results, list) and results:
-            return results[0]
+        if isinstance(results, list):
+            # Gamma sometimes returns the full market list for bad conditionIds.
+            # Validate that the result actually matches what we asked for.
+            for market in results:
+                if market.get("conditionId") == condition_id:
+                    return market
+            # No match — the conditionId was likely invalid
+            logger.warning(
+                "Gamma returned %d results for conditionId=%s but none matched",
+                len(results),
+                condition_id[:20],
+            )
+            raise ValueError(f"No Gamma market found for conditionId={condition_id[:20]}")
         return results  # type: ignore[return-value]
 
     async def get_events(

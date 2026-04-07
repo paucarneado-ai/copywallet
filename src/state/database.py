@@ -70,6 +70,8 @@ CREATE TABLE IF NOT EXISTS wallet_profiles (
     total_pnl       REAL,
     total_volume    REAL,
     is_suspicious   INTEGER,
+    tier            INTEGER DEFAULT 4,
+    quality_score   REAL DEFAULT 0.0,
     last_scored     TEXT
 );
 
@@ -112,6 +114,7 @@ class Database:
         """Open the connection, enable WAL mode, and create schema.
 
         Safe to call multiple times -- uses ``CREATE TABLE IF NOT EXISTS``.
+        Runs lightweight migrations for columns added after initial release.
         """
         self._db = await aiosqlite.connect(self._path)
         self._db.row_factory = aiosqlite.Row
@@ -119,7 +122,27 @@ class Database:
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(_SCHEMA_SQL)
         await self._db.commit()
+
+        # --- Migrations for existing databases ---
+        await self._migrate_wallet_tiers()
+
         logger.info("Database connected (%s), WAL enabled, schema ready", self._path)
+
+    async def _migrate_wallet_tiers(self) -> None:
+        """Add tier and quality_score columns if missing (v2 schema)."""
+        cursor = await self._db.execute("PRAGMA table_info(wallet_profiles)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "tier" not in columns:
+            await self._db.execute(
+                "ALTER TABLE wallet_profiles ADD COLUMN tier INTEGER DEFAULT 4"
+            )
+            logger.info("Migrated wallet_profiles: added tier column")
+        if "quality_score" not in columns:
+            await self._db.execute(
+                "ALTER TABLE wallet_profiles ADD COLUMN quality_score REAL DEFAULT 0.0"
+            )
+            logger.info("Migrated wallet_profiles: added quality_score column")
+        await self._db.commit()
 
     async def close(self) -> None:
         """Close the database connection gracefully."""
@@ -292,8 +315,8 @@ class Database:
         await self.execute(
             "INSERT OR REPLACE INTO wallet_profiles "
             "(address, username, category_stats, total_pnl, total_volume, "
-            "is_suspicious, last_scored) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "is_suspicious, tier, quality_score, last_scored) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 wallet["address"],
                 wallet["username"],
@@ -301,18 +324,35 @@ class Database:
                 wallet["total_pnl"],
                 wallet["total_volume"],
                 wallet["is_suspicious"],
+                wallet.get("tier", 4),
+                wallet.get("quality_score", 0.0),
                 wallet["last_scored"],
             ),
         )
 
-    async def get_tracked_wallets(self) -> List[Dict[str, Any]]:
-        """Return non-suspicious wallet profiles with parsed category_stats.
+    async def get_tracked_wallets(self, max_tier: int = 3) -> List[Dict[str, Any]]:
+        """Return wallet profiles up to *max_tier* with parsed category_stats.
 
-        Wallets flagged ``is_suspicious=1`` are excluded.  The
-        ``category_stats`` column is deserialised from JSON to a dict.
+        Tier 1 = proven, 2 = promising, 3 = experimental, 4 = suspicious.
+        Default returns tiers 1-3 (copyable).  Pass ``max_tier=4`` to
+        include suspicious wallets (for data tracking only).
+
+        The ``category_stats`` column is deserialised from JSON to a dict.
         """
         rows = await self.fetch_all(
-            "SELECT * FROM wallet_profiles WHERE is_suspicious = 0"
+            "SELECT * FROM wallet_profiles WHERE tier <= ? ORDER BY tier, quality_score DESC",
+            (max_tier,),
+        )
+        for row in rows:
+            raw = row.get("category_stats")
+            if isinstance(raw, str):
+                row["category_stats"] = json.loads(raw)
+        return rows
+
+    async def get_all_wallets(self) -> List[Dict[str, Any]]:
+        """Return ALL wallet profiles regardless of tier, for data collection."""
+        rows = await self.fetch_all(
+            "SELECT * FROM wallet_profiles ORDER BY tier, quality_score DESC"
         )
         for row in rows:
             raw = row.get("category_stats")

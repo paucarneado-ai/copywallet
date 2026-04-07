@@ -180,9 +180,10 @@ class TestIsSuspicious:
         stats = {"CRYPTO": {"win_rate": 0.92, "resolved_positions": 150}}
         assert is_suspicious(stats, max_win_rate=0.90) is False
 
-    def test_exactly_at_threshold_not_suspicious(self) -> None:
-        """Exactly at max_win_rate boundary is not suspicious (strict >)."""
-        stats = {"CRYPTO": {"win_rate": 0.90, "resolved_positions": 10}}
+    def test_exactly_at_threshold_with_deep_history(self) -> None:
+        """WR at threshold with deep history is not suspicious."""
+        stats = {"CRYPTO": {"win_rate": 0.90, "resolved_positions": 150,
+                            "profit_factor": 3.0, "roi": 2.0}}
         assert is_suspicious(stats, max_win_rate=0.90) is False
 
     def test_multiple_categories_one_suspicious(self) -> None:
@@ -193,6 +194,6 @@ class TestIsSuspicious:
         }
         assert is_suspicious(stats, max_win_rate=0.90) is True
 
-    def test_empty_stats_not_suspicious(self) -> None:
-        """No category stats means nothing to flag."""
-        assert is_suspicious({}, max_win_rate=0.90) is False
+    def test_empty_stats_is_tier4(self) -> None:
+        """No category stats means tier 4 (no data = suspicious)."""
+        assert is_suspicious({}, max_win_rate=0.90) is True

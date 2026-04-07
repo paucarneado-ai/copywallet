@@ -65,18 +65,35 @@ class CopyTradeMonitor:
         self._db = db
         self._config = config
         self._poller = RoundRobinPoller([])
+        self._wallet_tiers: dict[str, int] = {}
 
     async def refresh_wallet_list(self) -> None:
-        """Read tracked wallets from DB and update the poller.
+        """Read all wallets from DB and update the poller.
 
+        All wallets (tiers 1-4) are polled for data collection.
+        Tier info is cached for Kelly sizing decisions during trade evaluation.
         Caps the wallet list at ``max_tracked_wallets`` from config.
         """
         try:
-            wallets = await self._db.get_tracked_wallets()
+            wallets = await self._db.get_all_wallets()
             max_wallets = self._config.copy_trading.max_tracked_wallets
-            addresses = [w["address"] for w in wallets[:max_wallets]]
+            wallets = wallets[:max_wallets]
+            addresses = [w["address"] for w in wallets]
+            self._wallet_tiers = {
+                w["address"]: w.get("tier", 4) for w in wallets
+            }
             self._poller.update_wallets(addresses)
-            logger.info("Refreshed wallet list: %d wallets tracked", len(addresses))
+            tier_counts = {}
+            for t in self._wallet_tiers.values():
+                tier_counts[t] = tier_counts.get(t, 0) + 1
+            logger.info(
+                "Refreshed wallet list: %d wallets (T1=%d T2=%d T3=%d T4=%d)",
+                len(addresses),
+                tier_counts.get(1, 0),
+                tier_counts.get(2, 0),
+                tier_counts.get(3, 0),
+                tier_counts.get(4, 0),
+            )
         except Exception:
             logger.exception("Failed to refresh wallet list")
 
@@ -214,13 +231,26 @@ class CopyTradeMonitor:
             )
             return None
 
-        # --- Kelly position sizing ---
+        # --- Tier-based Kelly position sizing ---
+        wallet_tier = self._wallet_tiers.get(leader_address, 4)
+        tier_mults = self._config.copy_trading.tier_kelly_multipliers
+        tier_mult = tier_mults.get(wallet_tier, 0.0)
+
+        if tier_mult == 0.0:
+            # Tier 4: track the trade for data but don't copy
+            logger.debug(
+                "Tier 4 wallet %s: recording trade but not copying",
+                leader_address[:10],
+            )
+            return None
+
         risk = self._config.risk
+        kelly_frac = risk.kelly_fraction * 0.7 * tier_mult
         position_size = kelly_size(
             p_true=leader_wr,
             market_price=midpoint,
             bankroll=risk.starting_bankroll,
-            kelly_fraction=risk.kelly_fraction * 0.7,
+            kelly_fraction=kelly_frac,
             max_position_pct=risk.max_position_pct,
             cash_reserve_pct=risk.cash_reserve_pct,
             min_trade_size=risk.min_trade_size,
@@ -232,9 +262,6 @@ class CopyTradeMonitor:
 
         # --- Resolve leader username ---
         leader_username = await self._get_leader_username(leader_address)
-
-        # --- Build Kelly fraction for the signal record ---
-        kelly_frac = risk.kelly_fraction * 0.7
 
         return CopySignal(
             market_id=market_id,
@@ -252,8 +279,8 @@ class CopyTradeMonitor:
             kelly_fraction=kelly_frac,
             neg_risk=neg_risk,
             reasoning=(
-                f"Copy {leader_username} | {category} WR={leader_wr:.0%} "
-                f"| drift={price_drift:.4f} | slip={estimated_slippage:.4f}"
+                f"Copy {leader_username} T{wallet_tier} | {category} WR={leader_wr:.0%} "
+                f"| kelly={kelly_frac:.3f} | drift={price_drift:.4f} | slip={estimated_slippage:.4f}"
             ),
         )
 

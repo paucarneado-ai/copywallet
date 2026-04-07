@@ -77,6 +77,9 @@ class CopyTradingConfig:
     max_position_per_market: int = 100
     max_concurrent_positions: int = 10
     max_tracked_wallets: int = 15
+    tier_kelly_multipliers: Dict[int, float] = field(
+        default_factory=lambda: {1: 1.0, 2: 0.5, 3: 0.25, 4: 0.0}
+    )
 
 
 @dataclass

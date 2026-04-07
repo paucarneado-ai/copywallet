@@ -107,24 +107,148 @@ def is_suspicious(
     category_stats: dict[str, dict[str, Any]],
     max_win_rate: float = 0.90,
 ) -> bool:
-    """Detect wallets with artificially inflated statistics.
+    """Legacy binary suspicion check — kept for backward compatibility.
 
-    A wallet is suspicious when any category shows a win rate strictly
-    above *max_win_rate* combined with fewer than 100 resolved positions.
-    This pattern typically indicates stat-padding with tiny, low-risk bets.
+    Prefer :func:`score_wallet` which returns a richer tier + score.
+    """
+    tier, _ = score_wallet(category_stats, max_win_rate=max_win_rate)
+    return tier == 4
 
-    Args:
-        category_stats: mapping of category to stats dicts, each containing
-            at least ``win_rate`` and ``resolved_positions``.
-        max_win_rate: upper bound before suspicion triggers (exclusive).
+
+def score_wallet(
+    category_stats: dict[str, dict[str, Any]],
+    total_pnl: float = 0.0,
+    total_volume: float = 0.0,
+    max_win_rate: float = 0.90,
+) -> tuple[int, float]:
+    """Score a wallet into quality tiers with a 0-100 quality score.
+
+    Tier 1 (proven):       score >= 70, realistic stats, deep history
+    Tier 2 (promising):    score >= 45, decent stats, moderate history
+    Tier 3 (experimental): score >= 20, limited data or mixed signals
+    Tier 4 (suspicious):   score < 20, stat-padding / wash trading signals
 
     Returns:
-        ``True`` when at least one category triggers the heuristic.
+        Tuple of (tier, quality_score).
     """
+    if not category_stats:
+        return 4, 0.0
+
+    red_flags = 0
+    green_signals = 0
+
+    # --- Aggregate across categories ---
+    all_wrs: list[float] = []
+    all_pfs: list[float] = []
+    all_rois: list[float] = []
+    all_positions: list[int] = []
+    total_resolved = 0
+
     for stats in category_stats.values():
-        if stats["win_rate"] > max_win_rate and stats["resolved_positions"] < 100:
-            return True
-    return False
+        wr = stats.get("win_rate", 0)
+        pf = stats.get("profit_factor", 0)
+        roi = stats.get("roi", 0)
+        pos = stats.get("resolved_positions", 0)
+        total_resolved += pos
+        all_wrs.append(wr)
+        all_pfs.append(pf)
+        all_rois.append(roi)
+        all_positions.append(pos)
+
+    best_wr = max(all_wrs) if all_wrs else 0
+    max_pf = max(all_pfs) if all_pfs else 0
+    max_roi = max(all_rois) if all_rois else 0
+
+    # --- Red flag checks (each adds 1-3 flags) ---
+    #
+    # NOTE: Polymarket Data API inflates PF/ROI because closed-positions
+    # ``realizedPnl`` can be huge relative to ``totalBought`` for cheap
+    # outcomes that resolve at $1.  And ``total_pnl`` (all-time) vs
+    # ``total_volume`` (period-specific) are mismatched.  Thresholds
+    # are calibrated for these API quirks.
+
+    # Perfect or near-perfect WR with meaningful sample = stat-padding
+    if best_wr >= 0.95 and total_resolved >= 10:
+        red_flags += 3
+    elif best_wr > max_win_rate and total_resolved < 100:
+        red_flags += 2
+
+    # PF and ROI are highly correlated on Polymarket (both spike from
+    # the same cheap-outcome API quirk).  Score them together as a
+    # single "metric inflation" signal to avoid double-penalizing.
+    metric_flags = 0
+    if max_pf > 1000 or max_roi > 1000:
+        metric_flags = 3  # Almost certainly wash trading
+    elif max_pf > 200 or max_roi > 200:
+        metric_flags = 2
+    elif max_pf > 50 or max_roi > 50:
+        metric_flags = 1
+    red_flags += metric_flags
+
+    # PnL >> Volume — only flag extreme mismatches since
+    # the API fields cover different time windows
+    if total_volume > 0 and total_pnl / total_volume > 50:
+        red_flags += 2
+    elif total_volume > 0 and total_pnl / total_volume > 20:
+        red_flags += 1
+
+    # All categories at exactly pagination limit (truncated data)
+    if all_positions and all(p in (48, 49, 50) for p in all_positions):
+        red_flags += 1
+
+    # --- Green signal checks ---
+
+    # Realistic win rate band (55-75%)
+    if 0.55 <= best_wr <= 0.75:
+        green_signals += 3
+    elif 0.50 <= best_wr <= 0.80:
+        green_signals += 1
+
+    # Deep sample size
+    if total_resolved >= 200:
+        green_signals += 3
+    elif total_resolved >= 50:
+        green_signals += 2
+    elif total_resolved >= 20:
+        green_signals += 1
+
+    # Profitable wallet (PF > 1 means profitable overall)
+    if max_pf > 1.0:
+        green_signals += 1
+    # Extra credit for PF in the "clearly real" band
+    if 1.2 <= max_pf <= 50:
+        green_signals += 1
+
+    # Positive ROI
+    if max_roi > 0:
+        green_signals += 1
+    # Extra credit for ROI in modest range
+    if 0 < max_roi <= 20:
+        green_signals += 1
+
+    # Category specialist (1-3 categories = focused)
+    num_cats = len(category_stats)
+    if 1 <= num_cats <= 3:
+        green_signals += 1
+
+    # --- Compute score ---
+    # Green signals worth +8 each, red flags cost -12 each.
+    # Penalty is moderate so wallets with good WR + deep sample
+    # can survive a couple of API-inflated metric flags.
+    raw_score = (green_signals * 8) - (red_flags * 12)
+    quality_score = max(0.0, min(100.0, float(raw_score)))
+
+    # --- Assign tier ---
+    if quality_score >= 70:
+        tier = 1
+    elif quality_score >= 45:
+        tier = 2
+    elif quality_score >= 20:
+        tier = 3
+    else:
+        tier = 4
+
+    return tier, quality_score
 
 
 # ---------------------------------------------------------------------------
@@ -190,22 +314,33 @@ class WalletDiscovery:
                     closed = await self._get_closed_positions_capped(address, max_pages=10)
                     enriched = self._categorize_closed_positions(closed, category)
                     cat_stats = score_wallet_trades(enriched)
-                    suspicious = is_suspicious(cat_stats, self._config.max_win_rate)
+                    pnl = float(leader.get("pnl", 0.0))
+                    tier, quality_score = score_wallet(
+                        cat_stats,
+                        total_pnl=pnl,
+                        total_volume=volume,
+                        max_win_rate=self._config.max_win_rate,
+                    )
 
                     wallet_data: dict[str, Any] = {
                         "address": address,
                         "username": username,
                         "category_stats": cat_stats,
-                        "total_pnl": float(leader.get("pnl", 0.0)),
+                        "total_pnl": pnl,
                         "total_volume": volume,
-                        "is_suspicious": suspicious,
+                        "is_suspicious": tier == 4,
+                        "tier": tier,
+                        "quality_score": quality_score,
                         "last_scored": datetime.utcnow().isoformat(),
                     }
 
                     await self._db.upsert_wallet(wallet_data)
                     tracked_count += 1
-                    logger.info("Scored %s: PnL=$%.0f, categories=%s, suspicious=%s",
-                                username, float(leader.get("pnl", 0)), list(cat_stats.keys()), suspicious)
+                    logger.info(
+                        "Scored %s: tier=%d score=%.0f PnL=$%.0f categories=%s",
+                        username, tier, quality_score,
+                        pnl, list(cat_stats.keys()),
+                    )
                 except Exception as exc:
                     logger.warning("Failed to score wallet %s: %s", address[:10], exc)
                     continue

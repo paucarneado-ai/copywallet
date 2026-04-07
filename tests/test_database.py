@@ -338,6 +338,8 @@ class TestWalletProfiles:
     def _make_wallet(
         address: str = "0xwallet1",
         is_suspicious: int = 0,
+        tier: int = 2,
+        quality_score: float = 50.0,
     ) -> dict:
         """Build a minimal wallet dict."""
         return {
@@ -347,6 +349,8 @@ class TestWalletProfiles:
             "total_pnl": 500.0,
             "total_volume": 10000.0,
             "is_suspicious": is_suspicious,
+            "tier": tier,
+            "quality_score": quality_score,
             "last_scored": "2025-01-01T00:00:00",
         }
 
@@ -383,14 +387,23 @@ class TestWalletProfiles:
         assert parsed["crypto"]["win_rate"] == 0.6
 
     @pytest.mark.asyncio
-    async def test_get_tracked_wallets_excludes_suspicious(self, db: Database) -> None:
-        """get_tracked_wallets() must filter out suspicious wallets."""
-        await db.upsert_wallet(self._make_wallet("0xgood", is_suspicious=0))
-        await db.upsert_wallet(self._make_wallet("0xbad", is_suspicious=1))
+    async def test_get_tracked_wallets_excludes_tier4(self, db: Database) -> None:
+        """get_tracked_wallets() must filter out tier-4 (suspicious) wallets."""
+        await db.upsert_wallet(self._make_wallet("0xgood", tier=1, quality_score=80.0))
+        await db.upsert_wallet(self._make_wallet("0xbad", is_suspicious=1, tier=4, quality_score=0.0))
 
         tracked = await db.get_tracked_wallets()
         assert len(tracked) == 1
         assert tracked[0]["address"] == "0xgood"
+
+    @pytest.mark.asyncio
+    async def test_get_all_wallets_includes_tier4(self, db: Database) -> None:
+        """get_all_wallets() returns all tiers including suspicious."""
+        await db.upsert_wallet(self._make_wallet("0xgood", tier=1, quality_score=80.0))
+        await db.upsert_wallet(self._make_wallet("0xbad", is_suspicious=1, tier=4, quality_score=0.0))
+
+        all_wallets = await db.get_all_wallets()
+        assert len(all_wallets) == 2
 
     @pytest.mark.asyncio
     async def test_get_tracked_wallets_parses_category_stats(self, db: Database) -> None:
