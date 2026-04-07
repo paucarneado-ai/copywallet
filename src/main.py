@@ -13,14 +13,18 @@ import threading
 
 import uvicorn
 
+from src.brain.claude_scorer import ClaudeScorer
+from src.brain.pipeline import BrainPipeline
 from src.config import load_config
 from src.copytrade.discovery import WalletDiscovery
+from src.copytrade.models import CopySignal
 from src.copytrade.monitor import CopyTradeMonitor
 from src.executor.paper import PaperExecutor
 from src.monitor.dashboard import Dashboard
 from src.monitor.telegram_bot import TelegramNotifier
 from src.polymarket_api import PolymarketAPI
 from src.rate_limiter import RateLimiter
+from src.scanner.scanner import MarketScanner
 from src.state.database import Database
 
 logger = logging.getLogger("copywallet")
@@ -57,6 +61,13 @@ async def main() -> None:
         config.telegram_bot_token, config.telegram_user_id, db, executor
     )
     dashboard = Dashboard(db, executor, config.dashboard)
+
+    # -- 3b. Brain components (Phase 2) ----------------------------------------
+    scanner = MarketScanner(api, db, config.scanner)
+    claude_scorer = ClaudeScorer(
+        config.anthropic_api_key, config.claude_brain.model
+    )
+    brain = BrainPipeline(claude_scorer, db, config)
 
     # -- 4. Graceful shutdown via OS signals -----------------------------------
     shutdown_event = asyncio.Event()
@@ -105,6 +116,12 @@ async def main() -> None:
     discovery_interval = config.copy_trading.discovery_interval_hours * 3600
     last_snapshot = 0.0
     snapshot_interval = 300  # portfolio snapshot every 5 minutes
+    last_brain_scan = 0.0
+    brain_scan_interval = (
+        config.claude_brain.scan_interval_seconds
+        if config.claude_brain.enabled
+        else 999999
+    )
 
     logger.info("Copywallet started in %s mode", config.mode)
     logger.info("Starting bankroll: $%.2f", config.risk.starting_bankroll)
@@ -150,6 +167,50 @@ async def main() -> None:
                             )
                 except Exception as exc:
                     logger.error("Copy trading error: %s", exc)
+
+            # Claude Brain scanning (Phase 2)
+            if (
+                config.claude_brain.enabled
+                and claude_scorer.is_available()
+                and now - last_brain_scan > brain_scan_interval
+            ):
+                try:
+                    markets = await scanner.scan()
+                    for market in markets:
+                        signal = await brain.evaluate(market)
+                        if signal and signal.action not in ("HOLD", "SELL"):
+                            copy_signal = CopySignal(
+                                market_id=signal.market_id,
+                                token_id=signal.token_id,
+                                question=signal.question,
+                                category=signal.category,
+                                side=signal.action,
+                                leader_address="",
+                                leader_username="claude_brain",
+                                leader_price=signal.p_market,
+                                current_price=signal.p_market,
+                                estimated_slippage=0.0,
+                                position_size_usd=signal.position_size_usd,
+                                leader_category_wr=signal.p_true,
+                                kelly_fraction=signal.kelly_fraction,
+                                neg_risk=signal.neg_risk,
+                                reasoning=signal.reasoning,
+                            )
+                            result = await executor.execute(copy_signal)
+                            if result.status == "filled":
+                                await telegram.send_trade_alert(
+                                    copy_signal, result
+                                )
+                                logger.info(
+                                    "Brain trade: %s %s | EV: %.3f | $%.2f",
+                                    signal.action,
+                                    signal.question[:50],
+                                    signal.ev,
+                                    result.size_usd,
+                                )
+                    last_brain_scan = now
+                except Exception as exc:
+                    logger.error("Brain scan error: %s", exc)
 
             # Periodic portfolio snapshot
             if now - last_snapshot > snapshot_interval:
