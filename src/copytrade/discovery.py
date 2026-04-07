@@ -163,23 +163,29 @@ class WalletDiscovery:
                     continue
                 username = leader.get("userName", leader.get("username", address[:8]))
 
-                raw_trades = await self._api.get_all_trades(address)
-                enriched = await self._enrich_trades_with_category(raw_trades)
-                cat_stats = score_wallet_trades(enriched)
-                suspicious = is_suspicious(cat_stats, self._config.max_win_rate)
+                try:
+                    raw_trades = await self._get_trades_capped(address, max_pages=10)
+                    enriched = await self._enrich_trades_with_category(raw_trades)
+                    cat_stats = score_wallet_trades(enriched)
+                    suspicious = is_suspicious(cat_stats, self._config.max_win_rate)
 
-                wallet_data: dict[str, Any] = {
-                    "address": address,
-                    "username": username,
-                    "category_stats": cat_stats,
-                    "total_pnl": leader.get("pnl", 0.0),
-                    "total_volume": volume,
-                    "is_suspicious": suspicious,
-                    "last_scored": datetime.utcnow().isoformat(),
-                }
+                    wallet_data: dict[str, Any] = {
+                        "address": address,
+                        "username": username,
+                        "category_stats": cat_stats,
+                        "total_pnl": float(leader.get("pnl", 0.0)),
+                        "total_volume": volume,
+                        "is_suspicious": suspicious,
+                        "last_scored": datetime.utcnow().isoformat(),
+                    }
 
-                await self._db.upsert_wallet(wallet_data)
-                tracked_count += 1
+                    await self._db.upsert_wallet(wallet_data)
+                    tracked_count += 1
+                    logger.info("Scored %s: PnL=$%.0f, categories=%s, suspicious=%s",
+                                username, float(leader.get("pnl", 0)), list(cat_stats.keys()), suspicious)
+                except Exception as exc:
+                    logger.warning("Failed to score wallet %s: %s", address[:10], exc)
+                    continue
 
                 if tracked_count >= self._config.max_tracked_wallets:
                     logger.info(
@@ -189,6 +195,21 @@ class WalletDiscovery:
                     return
 
         logger.info("Discovery complete: %d wallets tracked", tracked_count)
+
+    async def _get_trades_capped(self, address: str, max_pages: int = 10) -> list[dict[str, Any]]:
+        """Fetch trades with a cap on pagination to avoid API errors on heavy traders."""
+        all_trades: list[dict[str, Any]] = []
+        for page in range(max_pages):
+            try:
+                batch = await self._api.get_trades(address, limit=100, offset=page * 100)
+            except Exception:
+                break
+            if not batch:
+                break
+            all_trades.extend(batch)
+            if len(batch) < 100:
+                break
+        return all_trades
 
     async def _enrich_trades_with_category(
         self,
