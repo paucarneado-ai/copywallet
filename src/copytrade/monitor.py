@@ -170,10 +170,10 @@ class CopyTradeMonitor:
         # --- Current price and spread from CLOB ---
         # If orderbook doesn't exist, the market is resolved/expired — skip
         spread = await self._safe_get_spread(token_id)
-        midpoint = await self._safe_get_midpoint(token_id)
-        if midpoint == 0.0 and spread >= 1.0:
-            logger.debug("Skipping resolved/expired market %s", market_id)
+        if spread >= 1.0:
+            logger.debug("Skipping resolved/expired market %s (no orderbook)", market_id)
             return None
+        midpoint = await self._safe_get_midpoint(token_id)
 
         # --- Price drift ---
         price_drift = abs(midpoint - leader_price) / max(leader_price, 0.01)
@@ -305,11 +305,11 @@ class CopyTradeMonitor:
         )
 
     async def _safe_get_spread(self, token_id: str) -> float:
-        """Fetch spread from CLOB, returning 1.0 on failure."""
+        """Fetch spread from CLOB, returning 1.0 on failure (resolved market)."""
         try:
             return await self._api.get_spread(token_id)
         except Exception:
-            logger.exception("Failed to get spread for %s", token_id)
+            logger.debug("No orderbook for token %s (likely resolved)", token_id[:20])
             return 1.0
 
     async def _safe_get_midpoint(self, token_id: str) -> float:
@@ -317,7 +317,7 @@ class CopyTradeMonitor:
         try:
             return await self._api.get_midpoint(token_id)
         except Exception:
-            logger.exception("Failed to get midpoint for %s", token_id)
+            logger.debug("No midpoint for token %s (likely resolved)", token_id[:20])
             return 0.5
 
     async def _estimate_slippage(
